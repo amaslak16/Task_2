@@ -1,20 +1,16 @@
 import allure
-import requests
 
-from constants import ORDERS_URL, REQUEST_TIMEOUT
+from data import INGREDIENTS_REQUIRED, UNAUTHORIZED
 
 
 @allure.feature("Создание заказа")
 class TestOrderCreation:
     @allure.title("Авторизованный пользователь создаёт заказ с ингредиентом")
-    def test_authorized_user_can_create_order(self, user_factory, ingredient_id):
-        user = user_factory()
-
-        response = requests.post(
-            ORDERS_URL,
-            json={"ingredients": [ingredient_id]},
-            headers={"Authorization": user["token"]},
-            timeout=REQUEST_TIMEOUT,
+    def test_authorized_user_can_create_order(
+        self, api_client, registered_user, ingredient_id
+    ):
+        response = api_client.create_order(
+            [ingredient_id], registered_user["token"]
         )
 
         assert response.status_code == 200, response.text
@@ -24,42 +20,26 @@ class TestOrderCreation:
         assert body["name"]
 
     @allure.title("Создание заказа без авторизации запрещено")
-    def test_unauthorized_user_cannot_create_order(self, ingredient_id):
-        response = requests.post(
-            ORDERS_URL, json={"ingredients": [ingredient_id]}, timeout=REQUEST_TIMEOUT
-        )
+    def test_unauthorized_user_cannot_create_order(self, api_client, ingredient_id):
+        response = api_client.create_order([ingredient_id])
 
         assert response.status_code == 401
-        assert response.json() == {
-            "success": False,
-            "message": "You should be authorised",
-        }
+        assert response.json() == UNAUTHORIZED
 
     @allure.title("Заказ без ингредиентов отклоняется")
-    def test_order_without_ingredients_is_rejected(self, user_factory):
-        user = user_factory()
-        response = requests.post(
-            ORDERS_URL,
-            json={"ingredients": []},
-            headers={"Authorization": user["token"]},
-            timeout=REQUEST_TIMEOUT,
-        )
+    def test_order_without_ingredients_is_rejected(self, api_client, registered_user):
+        response = api_client.create_order([], registered_user["token"])
 
         assert response.status_code == 400
-        assert response.json() == {
-            "success": False,
-            "message": "Ingredient ids must be provided",
-        }
+        assert response.json() == INGREDIENTS_REQUIRED
 
     @allure.title("Неверный хеш ингредиента приводит к ошибке сервера")
-    def test_order_with_invalid_ingredient_hash_is_rejected(self, user_factory):
-        user = user_factory()
-        response = requests.post(
-            ORDERS_URL,
-            json={"ingredients": ["invalid_ingredient_hash"]},
-            headers={"Authorization": user["token"]},
-            timeout=REQUEST_TIMEOUT,
+    def test_order_with_invalid_ingredient_hash_is_rejected(
+        self, api_client, registered_user
+    ):
+        response = api_client.create_order(
+            ["invalid_ingredient_hash"], registered_user["token"]
         )
 
         assert response.status_code == 500
-        assert response.text
+        assert response.reason == "Internal Server Error"

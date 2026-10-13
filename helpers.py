@@ -1,6 +1,9 @@
 from uuid import uuid4
 
+import allure
 
+
+@allure.step("Сгенерировать данные нового пользователя")
 def generate_user_data():
     suffix = uuid4().hex
     return {

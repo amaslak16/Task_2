@@ -1,50 +1,63 @@
 import pytest
-import requests
 
-from constants import INGREDIENTS_URL, LOGIN_URL, REGISTER_URL, REQUEST_TIMEOUT, USER_URL
+from api_client import ApiClient
 from helpers import generate_user_data
 
 
 @pytest.fixture
-def user_factory():
+def api_client():
+    return ApiClient()
+
+
+@pytest.fixture
+def user_factory(api_client):
     created_users = []
 
     def create_user():
         data = generate_user_data()
-        response = requests.post(REGISTER_URL, json=data, timeout=REQUEST_TIMEOUT)
-        assert response.status_code == 200, response.text
-        token = response.json()["accessToken"]
+        response = api_client.register_user(data)
+        token = response.json().get("accessToken") if response.status_code == 200 else None
         user = {"data": data, "response": response, "token": token}
-        created_users.append(user)
+        if token:
+            created_users.append(user)
         return user
 
     yield create_user
 
     for user in created_users:
-        token = user["token"]
-        response = requests.delete(
-            USER_URL, headers={"Authorization": token}, timeout=REQUEST_TIMEOUT
-        )
+        response = api_client.delete_user(user["token"])
         if response.status_code == 401:
-            login_response = requests.post(
-                LOGIN_URL,
-                json={key: user["data"][key] for key in ("email", "password")},
-                timeout=REQUEST_TIMEOUT,
-            )
-            assert login_response.status_code == 200, login_response.text
-            response = requests.delete(
-                USER_URL,
-                headers={"Authorization": login_response.json()["accessToken"]},
-                timeout=REQUEST_TIMEOUT,
-            )
-        assert response.status_code in (200, 202), response.text
-        assert response.json()["success"] is True
+            credentials = {key: user["data"][key] for key in ("email", "password")}
+            login_response = api_client.login_user(credentials)
+            if login_response.status_code != 200:
+                raise RuntimeError(f"Не удалось войти для удаления: {login_response.text}")
+            response = api_client.delete_user(login_response.json()["accessToken"])
+        if response.status_code not in (200, 202) or response.json().get("success") is not True:
+            raise RuntimeError(f"Не удалось удалить тестового пользователя: {response.text}")
 
 
 @pytest.fixture
-def ingredient_id():
-    response = requests.get(INGREDIENTS_URL, timeout=REQUEST_TIMEOUT)
-    assert response.status_code == 200, response.text
+def registered_user(user_factory):
+    user = user_factory()
+    if user["response"].status_code != 200 or not user["token"]:
+        raise RuntimeError(f"Не удалось создать тестового пользователя: {user['response'].text}")
+    return user
+
+
+@pytest.fixture
+def ingredient_id(api_client):
+    response = api_client.get_ingredients()
+    if response.status_code != 200:
+        raise RuntimeError(f"Не удалось получить ингредиенты: {response.text}")
     ingredients = response.json()["data"]
-    assert ingredients, "API returned an empty ingredient list"
+    if not ingredients:
+        raise RuntimeError("API вернул пустой список ингредиентов")
     return ingredients[0]["_id"]
+
+
+@pytest.fixture
+def user_with_order(api_client, registered_user, ingredient_id):
+    response = api_client.create_order([ingredient_id], registered_user["token"])
+    if response.status_code != 200:
+        raise RuntimeError(f"Не удалось создать тестовый заказ: {response.text}")
+    return registered_user, response.json()["order"]["number"]

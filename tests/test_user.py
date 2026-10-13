@@ -1,78 +1,101 @@
 import allure
 import pytest
-import requests
 
-from constants import LOGIN_URL, REQUEST_TIMEOUT, USER_URL
+from data import INVALID_CREDENTIALS, UNAUTHORIZED
 
 
 @allure.feature("Изменение данных пользователя")
 class TestUser:
-    @pytest.mark.parametrize("field", ["email", "password", "name"])
+    @pytest.mark.parametrize("field", ["email", "name"])
     @allure.title("Авторизованный пользователь меняет поле {field}")
-    def test_authorized_user_can_update_any_field(self, user_factory, field):
-        user = user_factory()
-        old_data = user["data"].copy()
-        new_value = f"updated_{old_data[field]}"
-
-        response = requests.patch(
-            USER_URL,
-            json={field: new_value},
-            headers={"Authorization": user["token"]},
-            timeout=REQUEST_TIMEOUT,
+    def test_authorized_user_can_update_profile_field(
+        self, api_client, registered_user, field
+    ):
+        new_value = f"updated_{registered_user['data'][field]}"
+        response = api_client.update_user(
+            {field: new_value}, registered_user["token"]
         )
 
         assert response.status_code == 200, response.text
-        user["data"][field] = new_value
-        body = response.json()
-        assert body["success"] is True
-        assert body["user"] == {
-            "email": user["data"]["email"],
-            "name": user["data"]["name"],
+        registered_user["data"][field] = new_value
+        assert response.json() == {
+            "success": True,
+            "user": {
+                "email": registered_user["data"]["email"],
+                "name": registered_user["data"]["name"],
+            },
         }
-        if field == "password":
-            login_response = requests.post(
-                LOGIN_URL,
-                json={"email": old_data["email"], "password": new_value},
-                timeout=REQUEST_TIMEOUT,
-            )
-            assert login_response.status_code == 200, login_response.text
-            assert login_response.json()["success"] is True
 
-    @pytest.mark.parametrize("field", ["email", "password", "name"])
+    @allure.title("Авторизованный пользователь меняет пароль")
+    def test_authorized_user_can_update_password(self, api_client, registered_user):
+        new_password = f"updated_{registered_user['data']['password']}"
+        response = api_client.update_user(
+            {"password": new_password}, registered_user["token"]
+        )
+
+        assert response.status_code == 200, response.text
+        registered_user["data"]["password"] = new_password
+        assert response.json() == {
+            "success": True,
+            "user": {
+                "email": registered_user["data"]["email"],
+                "name": registered_user["data"]["name"],
+            },
+        }
+        login_response = api_client.login_user(
+            {
+                "email": registered_user["data"]["email"],
+                "password": new_password,
+            }
+        )
+        assert login_response.status_code == 200
+        assert login_response.json()["user"] == {
+            "email": registered_user["data"]["email"],
+            "name": registered_user["data"]["name"],
+        }
+
+    @pytest.mark.parametrize("field", ["email", "name"])
     @allure.title("Изменение поля {field} без авторизации запрещено")
-    def test_unauthorized_user_cannot_update_any_field(self, user_factory, field):
-        user = user_factory()
-        original_data = user["data"].copy()
-
-        response = requests.patch(
-            USER_URL,
-            json={field: f"updated_{original_data[field]}"},
-            timeout=REQUEST_TIMEOUT,
+    def test_unauthorized_user_cannot_update_profile_field(
+        self, api_client, registered_user, field
+    ):
+        response = api_client.update_user(
+            {field: f"updated_{registered_user['data'][field]}"}
         )
 
         assert response.status_code == 401
-        assert response.json() == {
-            "success": False,
-            "message": "You should be authorised",
-        }
-        profile_response = requests.get(
-            USER_URL,
-            headers={"Authorization": user["token"]},
-            timeout=REQUEST_TIMEOUT,
-        )
+        assert response.json() == UNAUTHORIZED
+        profile_response = api_client.get_user(registered_user["token"])
         assert profile_response.status_code == 200
-        assert profile_response.json()["user"] == {
-            "email": original_data["email"],
-            "name": original_data["name"],
+        assert profile_response.json() == {
+            "success": True,
+            "user": {
+                "email": registered_user["data"]["email"],
+                "name": registered_user["data"]["name"],
+            },
         }
-        if field == "password":
-            login_response = requests.post(
-                LOGIN_URL,
-                json={
-                    "email": original_data["email"],
-                    "password": original_data["password"],
-                },
-                timeout=REQUEST_TIMEOUT,
-            )
-            assert login_response.status_code == 200
-            assert login_response.json()["success"] is True
+
+    @allure.title("Изменение пароля без авторизации запрещено")
+    def test_unauthorized_user_cannot_update_password(
+        self, api_client, registered_user
+    ):
+        new_password = f"updated_{registered_user['data']['password']}"
+        response = api_client.update_user({"password": new_password})
+
+        assert response.status_code == 401
+        assert response.json() == UNAUTHORIZED
+        old_credentials = {
+            "email": registered_user["data"]["email"],
+            "password": registered_user["data"]["password"],
+        }
+        old_login = api_client.login_user(old_credentials)
+        assert old_login.status_code == 200
+        assert old_login.json()["user"] == {
+            "email": registered_user["data"]["email"],
+            "name": registered_user["data"]["name"],
+        }
+        new_login = api_client.login_user(
+            {"email": registered_user["data"]["email"], "password": new_password}
+        )
+        assert new_login.status_code == 401
+        assert new_login.json() == INVALID_CREDENTIALS
