@@ -23,7 +23,12 @@ class TestOrderCreation:
     def test_unauthorized_user_cannot_create_order(self, api_client, ingredient_id):
         response = api_client.create_order([ingredient_id])
 
-        assert response.status_code == 401
+        allure.attach(
+            response.text,
+            name="Ответ на создание заказа без авторизации",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+        assert response.status_code == 401, response.text
         assert response.json() == UNAUTHORIZED
 
     @allure.title("Заказ без ингредиентов отклоняется")
@@ -34,6 +39,10 @@ class TestOrderCreation:
         assert response.json() == INGREDIENTS_REQUIRED
 
     @allure.title("Неверный хеш ингредиента приводит к ошибке сервера")
+    @allure.description(
+        "Документация API, стр. 1: неверный хеш ингредиента возвращает код 500. "
+        "Содержимое тела ответа не определено; фактический ответ приложен к тесту."
+    )
     def test_order_with_invalid_ingredient_hash_is_rejected(
         self, api_client, registered_user
     ):
@@ -41,5 +50,9 @@ class TestOrderCreation:
             ["invalid_ingredient_hash"], registered_user["token"]
         )
 
-        assert response.status_code == 500
-        assert response.reason == "Internal Server Error"
+        allure.attach(
+            response.text,
+            name="Ответ на неверный хеш ингредиента",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+        assert response.status_code == 500, response.text

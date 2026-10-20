@@ -31,11 +31,12 @@ class TestRegistration:
 
     @pytest.mark.parametrize("missing_field", ["email", "password", "name"])
     @allure.title("Регистрация без обязательного поля {missing_field} запрещена")
-    def test_register_without_required_field(self, api_client, missing_field):
+    def test_register_without_required_field(self, user_factory, missing_field):
         data = generate_user_data()
         data.pop(missing_field)
 
-        response = api_client.register_user(data)
+        user = user_factory(data)
+        response = user["response"]
 
         assert response.status_code == 403
         assert response.json() == REQUIRED_REGISTRATION_FIELDS

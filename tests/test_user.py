@@ -18,13 +18,18 @@ class TestUser:
 
         assert response.status_code == 200, response.text
         registered_user["data"][field] = new_value
-        assert response.json() == {
+        expected_body = {
             "success": True,
             "user": {
                 "email": registered_user["data"]["email"],
                 "name": registered_user["data"]["name"],
             },
         }
+        assert response.json() == expected_body
+
+        profile_response = api_client.get_user(registered_user["token"])
+        assert profile_response.status_code == 200, profile_response.text
+        assert profile_response.json() == expected_body
 
     @allure.title("Авторизованный пользователь меняет пароль")
     def test_authorized_user_can_update_password(self, api_client, registered_user):

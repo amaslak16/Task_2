@@ -14,7 +14,7 @@ class TestUserOrders:
         body = response.json()
         assert body["success"] is True
         assert isinstance(body["orders"], list)
-        assert any(order["number"] == order_number for order in body["orders"])
+        assert [order["number"] for order in body["orders"]] == [order_number]
         assert isinstance(body["total"], int)
         assert isinstance(body["totalToday"], int)
 

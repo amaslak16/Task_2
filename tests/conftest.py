@@ -13,10 +13,15 @@ def api_client():
 def user_factory(api_client):
     created_users = []
 
-    def create_user():
-        data = generate_user_data()
+    def create_user(data=None):
+        if data is None:
+            data = generate_user_data()
         response = api_client.register_user(data)
-        token = response.json().get("accessToken") if response.status_code == 200 else None
+        token = (
+            response.json().get("accessToken")
+            if response.status_code in (200, 201)
+            else None
+        )
         user = {"data": data, "response": response, "token": token}
         if token:
             created_users.append(user)
